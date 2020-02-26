@@ -14,3 +14,17 @@ docker run -d -p 8080:80 primary-nginx
 ```shell
 curl localhost:8080/healthz
 ```
+
+## Hadolint
+
+### Install Hadolint via Homebrew
+
+```shell
+brew install hadolint
+```
+
+### Use Hadolint for Dockerfile
+
+```shell
+hadolint ./Dockerfile
+```
