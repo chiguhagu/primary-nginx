@@ -1,9 +1,6 @@
 name: Release Docker Image
 
 on:
-  pull_request:
-    branches: 
-      - master
   push:
     branches: 
       - master
