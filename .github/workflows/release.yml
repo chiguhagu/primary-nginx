@@ -1,0 +1,78 @@
+name: Release Docker Image
+
+on:
+  pull_request:
+    branches: 
+      - master
+  push:
+    branches: 
+      - master
+  release:
+    type: [published]
+
+env:
+  DOCKER_BASE_NAME: docker.pkg.github.com/${{ github.repository }}/primary-nginx
+  DOCKER_HUB_BASE_NAME: chiguhagu/primary-nginx
+
+jobs:
+  hadolint:
+    runs-on: ubuntu-18.04
+
+    steps:
+
+      - uses: actions/checkout@v2
+
+      - name: Lint Dockerfile
+        uses: brpaz/hadolint-action@master
+        with:
+          dockerfile: "Dockerfile"
+
+  buildandscan:
+    runs-on: ubuntu-18.04
+    needs: hadolint
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set env
+      run: |
+        if [ "${{ github.event_name }}" = 'release' ]; then
+          export TAG_NAME="${{ github.event.release.tag_name }}"
+        else
+          export TAG_NAME="latest"
+        fi
+        echo "::set-env name=PKG_TAG::${DOCKER_BASE_NAME}:${TAG_NAME}"
+        echo "::set-env name=HUB_TAG::${DOCKER_HUB_BASE_NAME}:${TAG_NAME}"
+    
+    - name: Build image
+      run: |
+        docker build . -t "${PKG_TAG}"
+        docker tag "%{PKG_TAG}" "${HUB_TAG}"
+
+    - name: cached scan db
+      uses: actions/cache@preview
+      with:
+        path: vulndb/
+        key: trivy-vulndb
+
+    - name: Install Trivy
+      run: |
+        trivyRelease="$(curl -s "https://api.github.com/repos/aquasecurity/trivy/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | cut -d 'v' -f 2)"
+        wget https://github.com/aquasecurity/trivy/releases/download/v${trivyRelease}/trivy_${trivyRelease}_Linux-64bit.tar.gz
+        tar zxvf trivy_${trivyRelease}_Linux-64bit.tar.gz
+
+    - name: Scan Image
+      run: ./trivy --exit-code 1 --no-progress --severity CRITICAL --cache-dir vulndb/ "${PKG_TAG}"
+
+    - name: Login to Registries
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+      run: |
+        echo "${GITHUB_TOKEN}" | docker login docker.pkg.github.com -u peaceiris --password-stdin
+        echo "${DOCKER_HUB_TOKEN}" | docker login -u peaceiris --password-stdin
+
+    - name: Push to GitHub Packages
+      run: docker push "${PKG_TAG}"
+
+    - name: Push to Docker Hub
+      run: docker push "${HUB_TAG}"
